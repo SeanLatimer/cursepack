@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/klauspost/compress/zip"
+	"github.com/otiai10/copy"
 	"github.com/pkg/errors"
 	jww "github.com/spf13/jwalterweatherman"
 	"golang.org/x/sync/errgroup"
@@ -42,24 +43,57 @@ func handleZipPack(opts PackInstallOptions) error {
 		return err
 	}
 
-	// TODO: Possibly change this later to not blow away the whole mods folder
-	modsDest := filepath.Join(packPath, "mods")
-	err = os.RemoveAll(modsDest)
+	versionFilePath := filepath.Join(packPath, "cpversion.json")
+	versionMatch, err := compareVersion(manifest.Version, versionFilePath)
 	if err != nil {
 		return err
 	}
+	if versionMatch {
+		jww.INFO.Println("Manifest version matches the currently installed pack version, skipping install.")
+		jww.INFO.Println("Delete cpversion.json to force an install.")
+	} else {
+		modsDest := filepath.Join(packPath, "mods")
+		err = os.RemoveAll(modsDest)
+		if err != nil {
+			return err
+		}
 
-	err = downloadPackMods(manifest, modsDest)
-	if err != nil {
-		return err
+		err = downloadPackMods(manifest, modsDest)
+		if err != nil {
+			return err
+		}
+
+		err = extractZipOverrides(zipPath, manifest.Overrides, packPath)
+		if err != nil {
+			return err
+		}
+		err := writeVersionFile(manifest.Version, versionFilePath)
+		if err != nil {
+			return err
+		}
 	}
 
-	err = extractZipOverrides(zipPath, manifest.Overrides, packPath)
-	if err != nil {
-		return err
+	userFilesPath := filepath.Join(packPath, "user_files")
+	if !folderExists(userFilesPath) {
+		jww.INFO.Println("User files not found, precreating...")
+		err := precreateUserDir(userFilesPath)
+		if err != nil {
+			return err
+		}
+	} else {
+		jww.INFO.Println("User files found, copying any that exist...")
+		cpOpt := copy.Options{
+			Skip: func(src string) (bool, error) {
+				return filepath.Base(src) == "README.txt", nil
+			},
+		}
+		err := copy.Copy(userFilesPath, packPath, cpOpt)
+		if err != nil {
+			return err
+		}
 	}
 
-	if opts.Server {
+	if opts.Server && !versionMatch {
 		mcVersion := manifest.Minecraft.Version
 		modLoader := manifest.Minecraft.ModLoaders[0].ID
 		forgeVersion := mcVersion + "-" + modLoader[6:]
@@ -67,9 +101,16 @@ func handleZipPack(opts PackInstallOptions) error {
 		if err != nil {
 			return err
 		}
+
+		if opts.ServerMotd {
+			err = updateServerPropsVersion(manifest.Version, filepath.Join(packPath, "server.properties"))
+			if err != nil {
+				return err
+			}
+		}
 	}
 
-	return err
+	return nil
 }
 
 // https://addons-ecs.forgesvc.net/api/v2/addon/231275/file/3222705
@@ -94,7 +135,7 @@ func downloadPackMods(manifest ZipManifest, dest string) error {
 				return err
 			}
 
-			jww.INFO.Printf("Downloading %s", zipAddon.FileName)
+			jww.DEBUG.Printf("Downloading %s", zipAddon.FileName)
 			modPath := filepath.Join(dest, path.Base(zipAddon.DownloadURL))
 			modFile, err := os.Create(modPath)
 			if err != nil {

@@ -37,6 +37,12 @@ func main() {
 				Usage:   "Directory to install the pack in",
 				EnvVars: []string{"CP_DIR"},
 			},
+			&cli.BoolFlag{
+				Name:    "motd",
+				Value:   false,
+				Usage:   "Enables updating the server properties to reflect the pack version",
+				EnvVars: []string{"CP_MOTD"},
+			},
 		},
 		Name:    "cursepack",
 		Action:  run,
@@ -74,9 +80,10 @@ func run(ctx *cli.Context) error {
 	}
 	if strings.HasSuffix(pack, ".zip") {
 		return handleZipPack(PackInstallOptions{
-			Pack:   pack,
-			Path:   ctx.String("dir"),
-			Server: ctx.Bool("server"),
+			Pack:       pack,
+			Path:       ctx.String("dir"),
+			Server:     ctx.Bool("server"),
+			ServerMotd: ctx.Bool("motd"),
 		})
 	}
 	// IMPLEMENT
@@ -84,7 +91,8 @@ func run(ctx *cli.Context) error {
 }
 
 type PackInstallOptions struct {
-	Pack   string
-	Server bool
-	Path   string
+	Pack       string
+	Server     bool
+	Path       string
+	ServerMotd bool
 }
