@@ -128,6 +128,10 @@ func writeVersionFile(version string, path string) error {
 
 // compareVersion will return true if versions match, false if otherwise
 func compareVersion(version string, path string) (bool, error) {
+	if !fileExists(path) {
+		return false, nil
+	}
+
 	bytes, err := ioutil.ReadFile(path)
 	if err != nil {
 		return false, err
