@@ -18,7 +18,12 @@ jobs:
         with:
           go-version: 1.16
       - name: Install UPX
-        run: sudo apt-get update && sudo apt-get -y install upx
+        run: |
+          sudo apt-get update && sudo apt-get install xz-utils
+          chmod +x .github/scripts/upx.sh
+          .github/scripts/upx.sh
+          upx --version
+        shell: bash
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v2
         with:
