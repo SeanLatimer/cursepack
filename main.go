@@ -5,10 +5,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/seanlatimer/cursepack/version"
 	jww "github.com/spf13/jwalterweatherman"
 	"github.com/urfave/cli/v2"
 )
+
+var version = "0.1.0"
+var commit = ""
 
 const TEMPDIR_NAME = "cursepack"
 
@@ -39,7 +41,7 @@ func main() {
 		Name:    "cursepack",
 		Action:  run,
 		Before:  before,
-		Version: version.VERSION,
+		Version: version + " " + commit,
 	}
 
 	err := app.Run(os.Args)
