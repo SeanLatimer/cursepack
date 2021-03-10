@@ -20,7 +20,6 @@ jobs:
       - name: Install UPX
         run: |
           sudo apt-get update && sudo apt-get install xz-utils
-          chmod +x .github/scripts/upx.sh
           sudo .github/scripts/upx.sh
           upx --version
         shell: bash
