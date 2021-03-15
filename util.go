@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/magiconair/properties"
+	"github.com/pkg/errors"
 	jww "github.com/spf13/jwalterweatherman"
 )
 
@@ -40,31 +41,31 @@ func installForgeServer(forgeVersion string, path string) error {
 	if fileExists(installerJarPath) {
 		err := os.Remove(installerJarPath)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "Failed removing existing Forge installer")
 		}
 	}
 
 	forgeFile, err := os.Create(installerJarPath)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Failed creating Forge installer")
 	}
 	defer os.Remove(forgeFile.Name())
 	defer forgeFile.Close()
 
 	forgeResp, err := http.Get(FORGE_DL_URL + forgeVersion + "/" + installerJar)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Failed downloading Forge")
 	}
 	defer forgeResp.Body.Close()
 
 	_, err = io.Copy(forgeFile, forgeResp.Body)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Failed writing Forge to disk")
 	}
 
 	javaPath, err := exec.LookPath("java")
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Failed finding Java")
 	}
 
 	cmdInstall := &exec.Cmd{
@@ -77,41 +78,41 @@ func installForgeServer(forgeVersion string, path string) error {
 	jww.INFO.Println("Installing Forge Server")
 	err = cmdInstall.Run()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Failed installing Forge")
 	}
 
 	src := filepath.Join(path, "forge-"+forgeVersion+".jar")
 	dest := filepath.Join(path, "server.jar")
 
-	return os.Rename(src, dest)
+	return errors.Wrap(os.Rename(src, dest), "Failed renaming server jar")
 }
 
 func precreateUserDir(path string) error {
 	err := os.MkdirAll(filepath.Join(path, "mods"), 0700)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Failed creating mods directory")
 	}
 	err = os.MkdirAll(filepath.Join(path, "config"), 0700)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Failed creating config directory")
 	}
 	file, err := os.Create(filepath.Join(path, "README.txt"))
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Failed creating README")
 	}
 	defer file.Close()
 
 	_, err = file.WriteString("The contents of this folder should mirror the structure of the pack\n")
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Failed writting to README")
 	}
 
 	_, err = file.WriteString("Any user provided files will be copied from here into the pack\n")
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Failed writting to README")
 	}
 
-	return file.Sync()
+	return errors.Wrap(file.Sync(), "Failed flushing README to disk")
 }
 
 func writeVersionFile(version string, path string) error {
@@ -120,10 +121,10 @@ func writeVersionFile(version string, path string) error {
 	}
 	bytes, err := ver.Marshal()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Failed to marshal version file")
 	}
 
-	return ioutil.WriteFile(path, bytes, 0700)
+	return errors.Wrap(ioutil.WriteFile(path, bytes, 0700), "Failed to write version file")
 }
 
 // compareVersion will return true if versions match, false if otherwise
@@ -134,11 +135,11 @@ func compareVersion(version string, path string) (bool, error) {
 
 	bytes, err := ioutil.ReadFile(path)
 	if err != nil {
-		return false, err
+		return false, errors.Wrap(err, "Failed to open version file")
 	}
 	ver, err := UnmarshalCPVersion(bytes)
 	if err != nil {
-		return false, err
+		return false, errors.Wrap(err, "Failed to parse version file")
 	}
 	return ver.Version == version, nil
 }
@@ -147,21 +148,27 @@ func updateServerPropsVersion(version string, path string) error {
 	if fileExists(path) {
 		bytes, err := ioutil.ReadFile(path)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "Failed to read server properties")
 		}
 
 		props, err := properties.Load(bytes, properties.UTF8)
+		if err != nil {
+			return errors.Wrap(err, "Failed to parse server properties")
+		}
 		props.SetValue("motd", fmt.Sprintf("Version %s", version))
+		if err != nil {
+			return errors.Wrap(err, "Failed to set MOTD")
+		}
 
 		file, err := os.Create(path)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "Failed to open server properties")
 		}
 		defer file.Close()
 
 		_, err = props.Write(file, properties.UTF8)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "Failed to write server properties")
 		}
 	}
 	return nil

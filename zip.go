@@ -36,17 +36,17 @@ func handleZipPack(opts PackInstallOptions) error {
 
 	bytes, err := extractZipManifest(zipPath)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Failed extracting manifest")
 	}
 	manifest, err := UnmarshalZipManifest(bytes)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Failed marshalling manifest")
 	}
 
 	versionFilePath := filepath.Join(packPath, "cpversion.json")
 	versionMatch, err := compareVersion(manifest.Version, versionFilePath)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Failed comparing versions")
 	}
 	if versionMatch {
 		jww.INFO.Println("Manifest version matches the currently installed pack version, skipping install.")
@@ -55,17 +55,17 @@ func handleZipPack(opts PackInstallOptions) error {
 		modsDest := filepath.Join(packPath, "mods")
 		err = os.RemoveAll(modsDest)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "Failed removing old mods directory")
 		}
 
 		err = downloadPackMods(manifest, modsDest)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "Failed downloading mods")
 		}
 
-		err = extractZipOverrides(zipPath, manifest.Overrides, packPath)
+		err = extractZipOverrides(zipPath, filepath.Clean(manifest.Overrides), packPath)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "Failed extracting overrides")
 		}
 		err := writeVersionFile(manifest.Version, versionFilePath)
 		if err != nil {
@@ -93,6 +93,7 @@ func handleZipPack(opts PackInstallOptions) error {
 		}
 	}
 
+	jww.DEBUG.Println(opts.Server && !versionMatch)
 	if opts.Server && !versionMatch {
 		mcVersion := manifest.Minecraft.Version
 		modLoader := manifest.Minecraft.ModLoaders[0].ID
@@ -103,6 +104,7 @@ func handleZipPack(opts PackInstallOptions) error {
 		}
 
 		if opts.ServerMotd {
+			jww.INFO.Println("Updating MOTD...")
 			err = updateServerPropsVersion(manifest.Version, filepath.Join(packPath, "server.properties"))
 			if err != nil {
 				return err
@@ -208,7 +210,20 @@ func extractZipOverrides(zipPath string, overrides string, dest string) error {
 		return err
 	}
 	defer zReader.Close()
+	// clean up directories shipped in overrides
+	for _, src := range zReader.File {
+		if filepath.HasPrefix(src.Name, overrides) && strings.HasSuffix(src.Name, "/") && filepath.Clean(src.Name) != overrides {
+			if !strings.HasSuffix(src.Name, "mods/") {
+				path := filepath.Join(dest, filepath.Clean(src.Name[len(overrides):]))
+				err := os.RemoveAll(path)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
 
+	// extract overrides
 	var g errgroup.Group
 	sem := make(chan struct{}, 5)
 	for _, src := range zReader.File {
@@ -219,14 +234,15 @@ func extractZipOverrides(zipPath string, overrides string, dest string) error {
 				defer func() {
 					<-sem
 				}()
-				path := filepath.Join(dest, filepath.Clean(src.Name[len(overrides):]))
-				dir := filepath.Dir(path)
-				err := os.MkdirAll(dir, 0700)
-				if err != nil {
-					return err
-				}
 
 				if !strings.HasSuffix(src.Name, "/") {
+					path := filepath.Join(dest, filepath.Clean(src.Name[len(overrides):]))
+					dir := filepath.Dir(path)
+					err := os.MkdirAll(dir, 0700)
+					if err != nil {
+						return err
+					}
+
 					jww.DEBUG.Printf("%s -> %s", src.Name, path)
 					file, err := os.Create(path)
 					if err != nil {
@@ -244,8 +260,8 @@ func extractZipOverrides(zipPath string, overrides string, dest string) error {
 					if err != nil {
 						return err
 					}
-
 				}
+
 				return nil
 			})
 		}
